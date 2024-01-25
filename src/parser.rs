@@ -1,6 +1,6 @@
-use crate::{arc::Arc, node::Node, translator::Translator};
+use crate::{edge::Edge, node::Node, translator::Translator};
 
-pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec<Arc>) {
+pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec<Edge>) {
     let text = std::fs::read_to_string(file_name).unwrap();
 
     let doc = roxmltree::Document::parse(&text).unwrap();
@@ -29,7 +29,7 @@ pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec
         })
         .collect::<Vec<Node>>();
 
-    let arcs = arcs_elem
+    let edges = arcs_elem
         .children()
         .filter(|n| n.has_tag_name("arc"))
         .map(|n| {
@@ -43,9 +43,9 @@ pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec
             let from_position = from_node.position;
             let to_position = to_node.position;
 
-            Arc::new(from_position, to_position, length)
+            Edge::new(from_position, to_position, length)
         })
-        .collect::<Vec<Arc>>();
+        .collect::<Vec<Edge>>();
 
-    (nodes, arcs)
+    (nodes, edges)
 }

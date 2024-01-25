@@ -2,7 +2,7 @@ use egui::{Color32, Id, Pos2, Rect, Sense, Ui, Vec2};
 use log::debug;
 use std::sync::mpsc::{Receiver, Sender};
 
-use crate::{arc::Arc, node::Node, parser::parse_xml, translator::Translator};
+use crate::{edge::Edge, node::Node, parser::parse_xml, translator::Translator};
 
 pub struct LuxembourgMap {
     data_ctx: DataContext,
@@ -34,11 +34,11 @@ impl eframe::App for LuxembourgMap {
                 self.data_loaded = false;
             }
         }
-        match self.data_ctx.rx_arcs.try_recv() {
-            Ok(arcs) => {
-                self.data_ctx.arcs = arcs;
+        match self.data_ctx.rx_edges.try_recv() {
+            Ok(edges) => {
+                self.data_ctx.edges = edges;
                 self.data_loaded = true;
-                debug!("Arcs received");
+                debug!("Edges received");
             }
             _ => {
                 self.data_loaded = false;
@@ -71,7 +71,7 @@ impl eframe::App for LuxembourgMap {
                     {
                         send_parse_request(
                             self.data_ctx.tx_nodes.clone(),
-                            self.data_ctx.tx_arcs.clone(),
+                            self.data_ctx.tx_edges.clone(),
                             self.draw_ctx.translator.clone(),
                             ctx.clone(),
                         );
@@ -132,11 +132,9 @@ impl eframe::App for LuxembourgMap {
                 }
             });
 
-            // if self.data_loaded {
-            // debug!("Drawing map...");
-            // Draw arcs
-            for arc in &self.data_ctx.arcs {
-                self.draw_ctx.draw_arc(arc, ui, Color32::DARK_GRAY);
+            // Draw edges
+            for edge in &self.data_ctx.edges {
+                self.draw_ctx.draw_edge(edge, ui, Color32::DARK_GRAY);
             }
 
             // Draw nodes
@@ -171,13 +169,13 @@ impl eframe::App for LuxembourgMap {
 
 struct DataContext {
     rx_nodes: Receiver<Vec<Node>>,
-    rx_arcs: Receiver<Vec<Arc>>,
+    rx_edges: Receiver<Vec<Edge>>,
 
     tx_nodes: Sender<Vec<Node>>,
-    tx_arcs: Sender<Vec<Arc>>,
+    tx_edges: Sender<Vec<Edge>>,
 
     nodes: Vec<Node>,
-    arcs: Vec<Arc>,
+    edges: Vec<Edge>,
 }
 
 impl DataContext {
@@ -185,17 +183,17 @@ impl DataContext {
         Self::new(vec![], vec![])
     }
 
-    fn new(nodes: Vec<Node>, arcs: Vec<Arc>) -> Self {
+    fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
         let (tx_nodes, rx_nodes) = std::sync::mpsc::channel();
-        let (tx_arcs, rx_arcs) = std::sync::mpsc::channel();
+        let (tx_edges, rx_edges) = std::sync::mpsc::channel();
 
         Self {
             rx_nodes,
-            rx_arcs,
+            rx_edges,
             tx_nodes,
-            tx_arcs,
+            tx_edges,
             nodes,
-            arcs,
+            edges,
         }
     }
 }
@@ -245,11 +243,11 @@ impl DrawingContext {
         }
     }
 
-    fn draw_arc(&mut self, arc: &Arc, ui: &mut Ui, color: Color32) {
-        let from_position = (arc.from + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
-        let to_position = (arc.to + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
+    fn draw_edge(&mut self, edge: &Edge, ui: &mut Ui, color: Color32) {
+        let from_position = (edge.from + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
+        let to_position = (edge.to + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
 
-        debug!("Drawing arc from {:?} to {:?}", from_position, to_position);
+        debug!("Drawing edge from {:?} to {:?}", from_position, to_position);
 
         ui.painter()
             .line_segment([from_position, to_position], (0.5, color));
@@ -258,24 +256,24 @@ impl DrawingContext {
 
 fn send_parse_request(
     tx_nodes: Sender<Vec<Node>>,
-    tx_arcs: Sender<Vec<Arc>>,
+    tx_edges: Sender<Vec<Edge>>,
     translator: Translator,
     ctx: egui::Context,
 ) {
     tokio::spawn(async move {
         debug!("Parsing map...");
-        let (nodes, arcs) = parse_xml("res/map2.xml", translator);
+        let (nodes, edges) = parse_xml("res/map2.xml", translator);
         debug!("Map parsed");
 
         debug!("Sending nodes...");
         tx_nodes.send(nodes).unwrap();
         debug!("Nodes sent");
 
-        debug!("Sending arcs...");
-        tx_arcs.send(arcs).unwrap();
-        debug!("Arcs sent");
+        debug!("Sending edges...");
+        tx_edges.send(edges).unwrap();
+        debug!("Edges sent");
 
-        debug!(" Map loaded");
+        debug!("Map loaded");
         ctx.request_repaint();
     });
 }
