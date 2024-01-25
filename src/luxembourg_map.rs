@@ -1,34 +1,50 @@
 use egui::{Color32, Id, Pos2, Rect, Sense, Ui, Vec2};
+use log::debug;
+use std::sync::mpsc::{Receiver, Sender};
 
-use crate::{
-    arc::Arc,
-    node::Node,
-    parser::parse_xml,
-    translator::{TranslationResults, Translator},
-};
+use crate::{arc::Arc, node::Node, parser::parse_xml, translator::Translator};
 
 pub struct LuxembourgMap {
-    nodes: Vec<Node>,
-    arcs: Vec<Arc>,
+    data_ctx: DataContext,
     mouse_pos: Pos2,
     draw_ctx: DrawingContext,
+    data_loaded: bool,
 }
 
 impl LuxembourgMap {
     pub fn new() -> Self {
-        let (nodes, arcs) = parse_xml("res/map2.xml");
-
         Self {
-            nodes,
-            arcs,
+            data_ctx: DataContext::default(),
             mouse_pos: Pos2::new(0.0, 0.0),
             draw_ctx: DrawingContext::new(),
+            data_loaded: false,
         }
     }
 }
 
 impl eframe::App for LuxembourgMap {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        match self.data_ctx.rx_nodes.try_recv() {
+            Ok(nodes) => {
+                self.data_ctx.nodes = nodes;
+                self.data_loaded = true;
+                debug!("Nodes received");
+            }
+            _ => {
+                self.data_loaded = false;
+            }
+        }
+        match self.data_ctx.rx_arcs.try_recv() {
+            Ok(arcs) => {
+                self.data_ctx.arcs = arcs;
+                self.data_loaded = true;
+                debug!("Arcs received");
+            }
+            _ => {
+                self.data_loaded = false;
+            }
+        }
+
         egui::CentralPanel::default().show(ctx, |ui: &mut egui::Ui| {
             ui.heading("Luxembourg Map");
             ui.horizontal(|ui| {
@@ -49,6 +65,19 @@ impl eframe::App for LuxembourgMap {
                             .text("pan y"),
                     );
                     if ui
+                        .button("Load")
+                        .on_hover_text("Load the Luxembourg map")
+                        .clicked()
+                    {
+                        send_parse_request(
+                            self.data_ctx.tx_nodes.clone(),
+                            self.data_ctx.tx_arcs.clone(),
+                            self.draw_ctx.translator.clone(),
+                            ctx.clone(),
+                        );
+                        debug!("Loading map...")
+                    }
+                    if ui
                         .button("Reset")
                         .on_hover_text("Reset zoom and pan")
                         .clicked()
@@ -57,6 +86,7 @@ impl eframe::App for LuxembourgMap {
                         self.draw_ctx.pan_x = -700.0;
                         self.draw_ctx.pan_y = -179.0;
                     }
+                    ui.label(self.data_loaded.to_string());
                 });
             });
 
@@ -69,15 +99,19 @@ impl eframe::App for LuxembourgMap {
                 if i.pointer.is_decidedly_dragging() {
                     let delta = i.pointer.delta();
 
-                    self.draw_ctx.pan_x += delta.x as f64 / self.draw_ctx.zoom;
-                    self.draw_ctx.pan_y += delta.y as f64 / self.draw_ctx.zoom;
+                    self.draw_ctx.pan_x += delta.x / self.draw_ctx.zoom;
+                    self.draw_ctx.pan_y += delta.y / self.draw_ctx.zoom;
                 }
 
                 self.mouse_pos = i.pointer.interact_pos().unwrap_or_default();
 
                 if i.scroll_delta.y != 0.0 {
                     let zoom_before = self.draw_ctx.zoom;
-                    self.draw_ctx.zoom += i.scroll_delta.y as f64 / 10.0;
+                    self.draw_ctx.zoom += i.scroll_delta.y / 10.0;
+
+                    if self.draw_ctx.zoom < 1.0 {
+                        self.draw_ctx.zoom = 1.0;
+                    }
 
                     // Calculate the change in pan and divide it by 10
                     let new_pan_x = self.draw_ctx.pan_x * (self.draw_ctx.zoom / zoom_before);
@@ -89,51 +123,95 @@ impl eframe::App for LuxembourgMap {
 
                     // Calculate the change in pan and divide it by 10
                     self.draw_ctx.pan_x +=
-                        (new_pan_x - self.draw_ctx.pan_x + delta.x as f64) / self.draw_ctx.zoom;
+                        (new_pan_x - self.draw_ctx.pan_x + delta.x) / self.draw_ctx.zoom;
                     self.draw_ctx.pan_y +=
-                        (new_pan_y - self.draw_ctx.pan_y + delta.y as f64) / self.draw_ctx.zoom;
+                        (new_pan_y - self.draw_ctx.pan_y + delta.y) / self.draw_ctx.zoom;
 
                     self.draw_ctx.pan_x = self.draw_ctx.pan_x.clamp(-1000.0, 1000.0);
                     self.draw_ctx.pan_y = self.draw_ctx.pan_y.clamp(-1000.0, 1000.0);
                 }
             });
+
+            // if self.data_loaded {
+            // debug!("Drawing map...");
             // Draw arcs
-            for arc in &self.arcs {
+            for arc in &self.data_ctx.arcs {
                 self.draw_ctx.draw_arc(arc, ui, Color32::DARK_GRAY);
             }
 
             // Draw nodes
-            let mut clicked_node_index = None;
+            let mut clicked_node_idx = None;
             let mut node_drawings = Vec::new();
 
-            for (i, node) in self.nodes.iter().enumerate() {
+            for (idx, node) in self.data_ctx.nodes.iter().enumerate() {
                 if let Some(clicked_node_id) = self.draw_ctx.clicked_node_id.as_ref() {
                     if &node.id == clicked_node_id {
-                        clicked_node_index = Some(i);
+                        clicked_node_idx = Some(idx);
                         continue;
                     }
                 }
                 node_drawings.push((node, 0.5, ui.visuals().text_color()));
             }
 
-            if let Some(index) = clicked_node_index {
-                let node = &self.nodes[index];
+            if let Some(idx) = clicked_node_idx {
+                let node = &self.data_ctx.nodes[idx];
                 node_drawings.push((node, 3.0, Color32::RED));
             }
 
             for (node, size, color) in node_drawings {
                 self.draw_ctx.draw_node(ui, node, size, color);
             }
+            // debug!("Map drawn");
+            // } else {
+            //     ui.add(egui::ProgressBar::new(100.0).animate(true));
+            // }
         });
+    }
+}
+
+struct DataContext {
+    rx_nodes: Receiver<Vec<Node>>,
+    rx_arcs: Receiver<Vec<Arc>>,
+
+    tx_nodes: Sender<Vec<Node>>,
+    tx_arcs: Sender<Vec<Arc>>,
+
+    nodes: Vec<Node>,
+    arcs: Vec<Arc>,
+}
+
+impl DataContext {
+    fn empty() -> Self {
+        Self::new(vec![], vec![])
+    }
+
+    fn new(nodes: Vec<Node>, arcs: Vec<Arc>) -> Self {
+        let (tx_nodes, rx_nodes) = std::sync::mpsc::channel();
+        let (tx_arcs, rx_arcs) = std::sync::mpsc::channel();
+
+        Self {
+            rx_nodes,
+            rx_arcs,
+            tx_nodes,
+            tx_arcs,
+            nodes,
+            arcs,
+        }
+    }
+}
+
+impl Default for DataContext {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 
 struct DrawingContext {
     translator: Translator,
     clicked_node_id: Option<String>,
-    zoom: f64,
-    pan_x: f64,
-    pan_y: f64,
+    zoom: f32,
+    pan_x: f32,
+    pan_y: f32,
 }
 
 impl DrawingContext {
@@ -141,23 +219,25 @@ impl DrawingContext {
         Self {
             translator: Translator::default(),
             clicked_node_id: None,
-            zoom: 100.0,
-            pan_x: -700.0,
-            pan_y: -179.0,
+            zoom: 100.,
+            pan_x: -700.,
+            pan_y: -179.,
         }
     }
 
     fn draw_node(&mut self, ui: &mut Ui, node: &Node, r: f32, color: Color32) {
-        let (x, y) = self.get_translation(node.longitude, node.latitude);
+        let position_on_screen = (node.position + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
+
+        debug!("Drawing node {} at {:?}", node.id, position_on_screen);
 
         // Create an interactable area for the circle with a unique ID
         let node_response = ui.interact(
-            Rect::from_center_size(Pos2::new(x, y), Vec2::splat(r * 2.0)),
+            Rect::from_center_size(position_on_screen, Vec2::splat(r * 2.0)),
             Id::new(node.id.clone()),
             Sense::click(),
         );
 
-        ui.painter().circle_filled(Pos2::new(x, y), r, color);
+        ui.painter().circle_filled(position_on_screen, r, color);
 
         if node_response.clicked() {
             println!("Node {} was clicked", node.id);
@@ -166,17 +246,36 @@ impl DrawingContext {
     }
 
     fn draw_arc(&mut self, arc: &Arc, ui: &mut Ui, color: Color32) {
-        let (from_x, from_y) = self.get_translation(arc.from_long, arc.from_lat);
-        let (to_x, to_y) = self.get_translation(arc.to_long, arc.to_lat);
+        let from_position = (arc.from + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
+        let to_position = (arc.to + Vec2::new(self.pan_x, self.pan_y)) * self.zoom;
 
-        ui.painter().line_segment(
-            [Pos2::new(from_x, from_y), Pos2::new(to_x, to_y)],
-            (0.5, color),
-        );
-    }
+        debug!("Drawing arc from {:?} to {:?}", from_position, to_position);
 
-    fn get_translation(&mut self, longitude: f64, latitude: f64) -> TranslationResults {
-        self.translator
-            .project(longitude, latitude, self.zoom, self.pan_x, self.pan_y)
+        ui.painter()
+            .line_segment([from_position, to_position], (0.5, color));
     }
+}
+
+fn send_parse_request(
+    tx_nodes: Sender<Vec<Node>>,
+    tx_arcs: Sender<Vec<Arc>>,
+    translator: Translator,
+    ctx: egui::Context,
+) {
+    tokio::spawn(async move {
+        debug!("Parsing map...");
+        let (nodes, arcs) = parse_xml("res/map2.xml", translator);
+        debug!("Map parsed");
+
+        debug!("Sending nodes...");
+        tx_nodes.send(nodes).unwrap();
+        debug!("Nodes sent");
+
+        debug!("Sending arcs...");
+        tx_arcs.send(arcs).unwrap();
+        debug!("Arcs sent");
+
+        debug!(" Map loaded");
+        ctx.request_repaint();
+    });
 }

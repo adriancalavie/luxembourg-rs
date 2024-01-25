@@ -1,19 +1,16 @@
 use std::fmt;
 
+use egui::Pos2;
+
 #[derive(Debug, Clone)]
 pub struct Node {
     pub id: String,
-    pub longitude: f64,
-    pub latitude: f64,
+    pub position: Pos2,
 }
 
 impl Node {
-    pub fn new(id: String, longitude: f64, latitude: f64) -> Self {
-        Self {
-            id,
-            longitude,
-            latitude,
-        }
+    pub fn new(id: String, position: Pos2) -> Self {
+        Self { id, position }
     }
 }
 
@@ -22,16 +19,7 @@ impl fmt::Display for Node {
         write!(
             f,
             "[id: {}][long: {}][lat: {}]",
-            self.id, self.longitude, self.latitude
+            self.id, self.position.x, self.position.y
         )
     }
-}
-
-pub fn get_some_nodes() -> Vec<Node> {
-    vec![
-        Node::new("1".to_string(), 4963454.0 / 100000.0, 621476.0 / 100000.0),
-        Node::new("2".to_string(), 4959493.0 / 100000.0, 614350.0 / 100000.0),
-        Node::new("3".to_string(), 4959247.0 / 100000.0, 612096.0 / 100000.0),
-        Node::new("4".to_string(), 4959206.0 / 100000.0, 612162.0 / 100000.0),
-    ]
 }

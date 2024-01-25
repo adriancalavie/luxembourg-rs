@@ -1,6 +1,6 @@
 use std::mem;
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct HF64((u64, i16, i8));
 
 impl HF64 {
