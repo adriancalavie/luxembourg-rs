@@ -7,14 +7,17 @@ use crate::{
     models::{Edge, Node},
     parser::parse_xml,
     translator::Translator,
-    utils::constants::{DEFAULT_PAN, DEFAULT_ZOOM, MAX_PAN, MIN_PAN},
+    utils::{
+        constants::{DEFAULT_PAN, DEFAULT_ZOOM, MAX_PAN, MIN_PAN},
+        FrameHistory,
+    },
 };
 
 pub struct LuxembourgMap {
     data_ctx: DataContext,
     mouse_pos: Pos2,
     draw_ctx: DrawingContext,
-    data_loaded: bool,
+    frame_history: FrameHistory,
 }
 
 impl LuxembourgMap {
@@ -23,32 +26,23 @@ impl LuxembourgMap {
             data_ctx: DataContext::default(),
             mouse_pos: Pos2::new(0.0, 0.0),
             draw_ctx: DrawingContext::new(),
-            data_loaded: false,
+            frame_history: FrameHistory::default(),
         }
     }
 }
 
 impl eframe::App for LuxembourgMap {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        match self.data_ctx.rx_nodes.try_recv() {
-            Ok(nodes) => {
-                self.data_ctx.nodes = nodes;
-                self.data_loaded = true;
-                debug!("Nodes received");
-            }
-            _ => {
-                self.data_loaded = false;
-            }
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        self.frame_history
+            .on_new_frame(ctx.input(|i| i.time), frame.info().cpu_usage);
+
+        if let Ok(nodes) = self.data_ctx.rx_nodes.try_recv() {
+            self.data_ctx.nodes = nodes;
+            debug!("Nodes received");
         }
-        match self.data_ctx.rx_edges.try_recv() {
-            Ok(edges) => {
-                self.data_ctx.edges = edges;
-                self.data_loaded = true;
-                debug!("Edges received");
-            }
-            _ => {
-                self.data_loaded = false;
-            }
+        if let Ok(edges) = self.data_ctx.rx_edges.try_recv() {
+            self.data_ctx.edges = edges;
+            debug!("Edges received");
         }
 
         egui::CentralPanel::default().show(ctx, |ui: &mut egui::Ui| {
@@ -91,7 +85,9 @@ impl eframe::App for LuxembourgMap {
                         self.draw_ctx.zoom = DEFAULT_ZOOM;
                         self.draw_ctx.pan = DEFAULT_PAN;
                     }
-                    ui.label(self.data_loaded.to_string());
+                    ui.label(format!("Data loaded: {}", self.data_ctx.is_loaded()));
+                    ui.label(format!("FPS: {:.1}", self.frame_history.fps()));
+                    self.frame_history.ui(ui);
                 });
             });
 

@@ -31,6 +31,10 @@ impl DataContext {
             edges,
         }
     }
+
+    pub fn is_loaded(&self) -> bool {
+        !self.nodes.is_empty() && !self.edges.is_empty()
+    }
 }
 
 impl Default for DataContext {

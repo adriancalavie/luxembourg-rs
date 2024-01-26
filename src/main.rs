@@ -25,6 +25,7 @@ fn main() -> Result<(), eframe::Error> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1366.0, 900.0]),
+        hardware_acceleration: eframe::HardwareAcceleration::Required,
         ..Default::default()
     };
     eframe::run_native(

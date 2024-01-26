@@ -26,7 +26,6 @@ impl DrawingContext {
 
     pub fn draw_node(&mut self, ui: &mut Ui, node: &Node, r: f32, color: Color32) {
         let position_on_screen = self.adjust_for_pan_and_zoom(&node.position);
-
         debug!("Drawing node {} at {:?}", node.id, position_on_screen);
 
         // Create an interactable area for the circle with a unique ID
@@ -35,7 +34,6 @@ impl DrawingContext {
             Id::new(node.id.clone()),
             Sense::click(),
         );
-
         ui.painter().circle_filled(position_on_screen, r, color);
 
         if node_response.clicked() {
@@ -49,9 +47,8 @@ impl DrawingContext {
         let to_position = self.adjust_for_pan_and_zoom(&edge.to);
 
         debug!("Drawing edge from {:?} to {:?}", from_position, to_position);
-
         ui.painter()
-            .line_segment([from_position, to_position], (0.5, color));
+            .line_segment([from_position, to_position], (1.0, color));
     }
 
     fn adjust_for_pan_and_zoom(&self, position: &Pos2) -> Pos2 {
