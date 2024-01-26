@@ -55,3 +55,6 @@ impl DrawingContext {
         (*position + self.pan) * self.zoom
     }
 }
+
+#[cfg(test)]
+mod tests {}

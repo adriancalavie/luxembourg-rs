@@ -11,7 +11,4 @@ impl WindowSize {
         debug!("screen width: {}, screen height: {}", width, height);
         Self { width, height }
     }
-    pub fn from(size: egui::Vec2) -> Self {
-        Self::new(size.x as u32, size.y as u32)
-    }
 }
