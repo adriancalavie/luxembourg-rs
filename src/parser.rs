@@ -1,4 +1,7 @@
-use crate::{edge::Edge, node::Node, translator::Translator};
+use crate::{
+    models::{Edge, Node},
+    translator::Translator,
+};
 
 pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec<Edge>) {
     let text = std::fs::read_to_string(file_name).unwrap();

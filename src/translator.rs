@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use egui::Pos2;
 
-use crate::{
-    hashable_float::HF64,
-    utils::WindowSize,
-};
+use crate::{utils::WindowSize, utils::HF64};
 
 pub type TranslationArgs = (HF64, HF64); // longitude, latitude
 pub type TranslationResults = Pos2; // x, y
