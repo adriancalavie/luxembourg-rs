@@ -1,11 +1,13 @@
+use egui::{mutex::Mutex, Pos2};
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
-use egui::Pos2;
-
-use crate::{utils::WindowSize, utils::HF64};
+use crate::utils::{constants::CANVAS_SIZE, WindowSize, HF64};
 
 pub type TranslationArgs = (HF64, HF64); // longitude, latitude
 pub type TranslationResults = Pos2; // x, y
+
+pub static TRANSLATOR: Lazy<Mutex<Translator>> = Lazy::new(|| Mutex::new(Translator::default()));
 
 #[derive(Debug, Clone)]
 pub struct Translator {
@@ -57,12 +59,7 @@ impl Translator {
 
 impl Default for Translator {
     fn default() -> Self {
-        const _MIN_LAT: f64 = 5.734153;
-        const _MAX_LAT: f64 = 6.531256;
-        const _MIN_LONG: f64 = 50.182918;
-        const _MAX_LONG: f64 = 49.441140;
-
-        Translator::new(WindowSize::new(1366, 900))
+        Translator::new(WindowSize::from(CANVAS_SIZE))
     }
 }
 

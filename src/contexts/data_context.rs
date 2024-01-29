@@ -1,6 +1,9 @@
 use std::sync::mpsc::{Receiver, Sender};
 
-use crate::models::{Edge, Node};
+use crate::{
+    models::{Edge, Node},
+    utils::constants::xml_files::{MAP2_XML, TEST_XML},
+};
 
 pub struct DataContext {
     pub rx_nodes: Receiver<Vec<Node>>,
@@ -11,6 +14,13 @@ pub struct DataContext {
 
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+
+    pub nodes_loading: bool,
+    pub edges_loading: bool,
+
+    data_file: String,
+
+    first_load: std::cell::Cell<bool>,
 }
 
 impl DataContext {
@@ -29,11 +39,37 @@ impl DataContext {
             tx_edges,
             nodes,
             edges,
+            nodes_loading: false,
+            edges_loading: false,
+            data_file: MAP2_XML.to_string(),
+            first_load: std::cell::Cell::new(true),
         }
     }
 
-    pub fn is_loaded(&self) -> bool {
+    pub fn data_file(&self) -> &str {
+        &self.data_file
+    }
+
+    pub fn switch_data_file(&mut self) {
+        self.data_file = if self.data_file == MAP2_XML {
+            TEST_XML.to_string()
+        } else {
+            MAP2_XML.to_string()
+        };
+    }
+
+    pub fn has_data(&self) -> bool {
         !self.nodes.is_empty() && !self.edges.is_empty()
+    }
+
+    pub fn first_load(&self) -> bool {
+        // short circuit after first load
+        if self.first_load.get() {
+            self.first_load.set(false);
+            true
+        } else {
+            false
+        }
     }
 }
 

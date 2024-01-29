@@ -1,18 +1,22 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 mod contexts;
-mod luxembourg_map;
+mod map;
 mod models;
 mod parser;
 mod translator;
 mod utils;
+mod components;
 
 use dotenv::dotenv;
 use eframe::egui;
 use env_logger::{Builder, Target};
-use luxembourg_map::LuxembourgMap;
+use map::Map;
 use tokio::runtime::Runtime;
 
 fn main() -> Result<(), eframe::Error> {
+    if cfg!(debug) {
+        std::env::set_var("RUST_LOG", "debug");
+    }
     dotenv().ok();
 
     let mut builder = Builder::from_default_env();
@@ -26,16 +30,19 @@ fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1366.0, 900.0]),
         hardware_acceleration: eframe::HardwareAcceleration::Required,
+        // vsync: false,
+        // renderer: eframe::Renderer::Wgpu,
+        // wgpu_options: egui_wgpu::WgpuConfiguration {
+        //     power_preference: eframe::wgpu::PowerPreference::HighPerformance,
+        //     present_mode: eframe::wgpu::PresentMode::AutoNoVsync,
+        //     supported_backends: eframe::wgpu::Backends::VULKAN,
+        //     ..Default::default()
+        // },
         ..Default::default()
     };
     eframe::run_native(
         "luxembourg-rs",
         options,
-        Box::new(|cc| {
-            // This gives us image support:
-            egui_extras::install_image_loaders(&cc.egui_ctx);
-
-            Box::<LuxembourgMap>::from(LuxembourgMap::new())
-        }),
+        Box::new(|_cc| Box::<Map>::from(Map::new())),
     )
 }

@@ -1,9 +1,9 @@
 use crate::{
     models::{Edge, Node},
-    translator::Translator,
+    translator::TRANSLATOR,
 };
 
-pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec<Edge>) {
+pub fn parse_xml(file_name: &str) -> (Vec<Node>, Vec<Edge>) {
     let text = std::fs::read_to_string(file_name).unwrap();
 
     let doc = roxmltree::Document::parse(&text).unwrap();
@@ -26,7 +26,7 @@ pub fn parse_xml(file_name: &str, mut translator: Translator) -> (Vec<Node>, Vec
             let lat = n.attribute("latitude").unwrap().parse::<f64>().unwrap() / 100000.0;
             let long = n.attribute("longitude").unwrap().parse::<f64>().unwrap() / 100000.0;
 
-            let position_on_screen = translator.project(lat, long);
+            let position_on_screen = TRANSLATOR.lock().project(lat, long);
 
             Node::new(id, position_on_screen)
         })

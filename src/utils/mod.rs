@@ -3,6 +3,7 @@ pub mod constants;
 mod frame_history;
 mod hashable_float;
 mod window_utils;
+mod extensions;
 
 #[allow(unused_imports)]
 pub use frame_history::FrameHistory;
