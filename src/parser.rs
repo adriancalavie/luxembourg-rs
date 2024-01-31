@@ -5,7 +5,7 @@ use crate::{
     translator::TRANSLATOR,
 };
 
-pub fn parse_xml(file_name: &str) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<Node>>) {
+pub fn parse_xml(file_name: &str) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<Edge>>) {
     let text = std::fs::read_to_string(file_name).unwrap();
 
     let doc = roxmltree::Document::parse(&text).unwrap();
@@ -34,7 +34,6 @@ pub fn parse_xml(file_name: &str) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<No
         })
         .collect::<Vec<Node>>();
 
-    let mut neighboors: HashMap<Node, Vec<Node>> = HashMap::new();
     let edges = arcs_elem
         .children()
         .filter(|n| n.has_tag_name("arc"))
@@ -46,22 +45,17 @@ pub fn parse_xml(file_name: &str) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<No
             let from_node = nodes.iter().find(|n| n.id == from).unwrap().clone();
             let to_node = nodes.iter().find(|n| n.id == to).unwrap().clone();
 
-            neighboors
-                .entry(from_node.clone())
-                .and_modify(|neighboors| neighboors.push(to_node.clone()))
-                .or_insert(vec![to_node.clone()]);
-            
-            neighboors
-                .entry(to_node.clone())
-                .and_modify(|neighboors| neighboors.push(from_node.clone()))
-                .or_insert(vec![from_node.clone()]);
-
-            let from_position = from_node.position;
-            let to_position = to_node.position;
-
-            Edge::new(from_position, to_position, length)
+            Edge::new(from_node, to_node, length)
         })
         .collect::<Vec<Edge>>();
+
+    let mut neighboors: HashMap<Node, Vec<Edge>> = HashMap::new();
+    edges.iter().for_each(|edge| {
+        neighboors
+            .entry(edge.from.clone())
+            .and_modify(|neighboors| neighboors.push(edge.clone()))
+            .or_insert(vec![edge.clone()]);
+    });
 
     (nodes, edges, neighboors)
 }

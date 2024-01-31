@@ -15,12 +15,12 @@ pub struct DataContext {
     pub tx_nodes: Sender<Vec<Node>>,
     pub tx_edges: Sender<Vec<Edge>>,
 
-    pub tx_neighboors: Sender<HashMap<Node, Vec<Node>>>,
-    pub rx_neighboors: Receiver<HashMap<Node, Vec<Node>>>,
+    pub tx_neighboors: Sender<HashMap<Node, Vec<Edge>>>,
+    pub rx_neighboors: Receiver<HashMap<Node, Vec<Edge>>>,
 
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
-    pub neighboors: HashMap<Node, Vec<Node>>,
+    pub neighboors: HashMap<Node, Vec<Edge>>,
 
     pub nodes_loading: bool,
     pub edges_loading: bool,
@@ -35,7 +35,7 @@ impl DataContext {
         Self::new(vec![], vec![], HashMap::new())
     }
 
-    fn new(nodes: Vec<Node>, edges: Vec<Edge>, neighboors: HashMap<Node, Vec<Node>>) -> Self {
+    fn new(nodes: Vec<Node>, edges: Vec<Edge>, neighboors: HashMap<Node, Vec<Edge>>) -> Self {
         let (tx_nodes, rx_nodes) = std::sync::mpsc::channel();
         let (tx_edges, rx_edges) = std::sync::mpsc::channel();
         let (tx_neighboors, rx_neighboors) = std::sync::mpsc::channel();

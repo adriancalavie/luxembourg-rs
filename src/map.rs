@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::mpsc::Sender};
 
 use crate::{
     components::toggle_ui,
-    contexts::{DataContext, DrawingContext},
+    contexts::{AlgorithmContext, DataContext, DrawingContext},
     models::{Edge, Node},
     parser::parse_xml,
     utils::{
@@ -17,6 +17,7 @@ use crate::{
 pub struct Map {
     data_ctx: DataContext,
     draw_ctx: DrawingContext,
+    algorithm_ctx: AlgorithmContext,
     state: UIState,
 }
 
@@ -25,6 +26,7 @@ impl Map {
         Self {
             data_ctx: DataContext::default(),
             draw_ctx: DrawingContext::new(),
+            algorithm_ctx: AlgorithmContext::new(),
             state: UIState::default(),
         }
     }
@@ -56,7 +58,7 @@ impl Map {
         );
     }
 
-    fn render_edges(&self, ui: &mut egui::Ui) {
+    fn render_edges(&mut self, ui: &mut egui::Ui) {
         if !self.data_ctx.has_data() {
             return;
         }
@@ -67,35 +69,51 @@ impl Map {
             Color32::GRAY
         };
 
+        let mut selected_to_draw = Vec::new();
+        let mut edges_to_draw = Vec::new();
+
         self.data_ctx.edges.iter().for_each(|edge| {
-            let (from, to) = self.draw_ctx.calc_edge_coords(edge);
-            {
-                ui.painter().line_segment([from, to], (0.5, edge_color));
+            if self.state.draw_path && self.algorithm_ctx.is_edge_selected(edge) {
+                selected_to_draw.push((edge.clone(), 2.0, Color32::RED));
+                return;
             }
+            edges_to_draw.push((edge, 0.5, edge_color));
+        });
+
+        assert_eq!(
+            edges_to_draw.len() + selected_to_draw.len(),
+            self.data_ctx.edges.len(),
+            "edges_to_draw count does not match data_ctx.edges count"
+        );
+        self.state.selected_edges = Some(selected_to_draw);
+
+        edges_to_draw.into_iter().for_each(|(edge, size, color)| {
+            let (from, to) = self.draw_ctx.calc_edge_coords(edge);
+            ui.painter().line_segment([from, to], (size, color));
         });
     }
 
     fn render_nodes(&mut self, ui: &mut egui::Ui) {
-        let mut selected_nodes = Vec::new();
+        let mut selected_to_draw = Vec::new();
         let mut nodes_to_draw = Vec::new();
         let mut nodes_to_select = Vec::new();
 
         self.data_ctx.nodes.iter().for_each(|node| {
             if self.is_selected(&node.id) {
-                selected_nodes.push((node, 3.0, Color32::RED));
+                selected_to_draw.push((node.clone(), 3.0, Color32::RED));
                 return;
             }
             nodes_to_draw.push((node, 0.5, ui.visuals().text_color()));
         });
 
-        nodes_to_draw.extend(selected_nodes);
         assert_eq!(
-            nodes_to_draw.len(),
+            nodes_to_draw.len() + selected_to_draw.len(),
             self.data_ctx.nodes.len(),
             "nodes_to_draw count does not match data_ctx.nodes count"
         );
+        self.state.selected_nodes = Some(selected_to_draw);
 
-        for (node, size, color) in nodes_to_draw.into_iter() {
+        nodes_to_draw.into_iter().for_each(|(node, size, color)| {
             let position_on_screen = self.draw_ctx.calc_node_coords(node);
             // Create an interactable area for the circle with a unique ID
             let node_hook = ui.interact(
@@ -108,7 +126,7 @@ impl Map {
                 nodes_to_select.push(node.clone());
             }
             ui.painter().circle_filled(position_on_screen, size, color);
-        }
+        });
 
         nodes_to_select.into_iter().for_each(|node| {
             self.select_node(node);
@@ -117,6 +135,8 @@ impl Map {
 
     fn select_node(&mut self, node: Node) {
         println!("Node {} was clicked", node);
+        self.state.draw_path = false;
+
         let node_id = node.id.clone();
         match (&self.state.start_node, &self.state.end_node) {
             (None, _) => {
@@ -281,16 +301,32 @@ impl Map {
                 ToastKind::Info,
             );
         }
-        if self.state.is_start_and_end_set() {
+        if self.state.is_start_and_end_set()
+            && self.algorithm_ctx.is_new_args(
+                self.state.start_node.as_ref().unwrap(),
+                self.state.end_node.as_ref().unwrap(),
+            )
+        {
             debug!("Start and end nodes are set");
-            self.state.show_toast(
-                format!(
-                    "Start and end nodes are set: {} and {}",
-                    self.state.start_node.as_ref().unwrap(),
-                    self.state.end_node.as_ref().unwrap()
-                ),
-                ToastKind::Info,
+            if self.algorithm_ctx.is_new_args(
+                self.state.start_node.as_ref().unwrap(),
+                self.state.end_node.as_ref().unwrap(),
+            ) {
+                self.state.show_toast(
+                    format!(
+                        "Starting A* run from {} to {}",
+                        self.state.start_node.as_ref().unwrap().id,
+                        self.state.end_node.as_ref().unwrap().id
+                    ),
+                    ToastKind::Info,
+                );
+            }
+            self.algorithm_ctx.compute_path(
+                self.state.start_node.as_ref().unwrap(),
+                self.state.end_node.as_ref().unwrap(),
+                &self.data_ctx.neighboors,
             );
+            self.state.draw_path = true;
         }
     }
 
@@ -309,9 +345,28 @@ impl Map {
             // Draw nodes
             self.render_nodes(ui);
 
+            // Draw selected nodes & edges
+            self.render_selected(ui);
+
             // Draw toasts
             self.state.toasts.show(ctx);
         });
+    }
+
+    fn render_selected(&self, ui: &mut egui::Ui) {
+        if let Some(selected_nodes) = &self.state.selected_nodes {
+            selected_nodes.iter().for_each(|(node, size, color)| {
+                let position_on_screen = self.draw_ctx.calc_node_coords(node);
+                ui.painter()
+                    .circle_filled(position_on_screen, *size, *color);
+            });
+        }
+        if let Some(selected_edges) = &self.state.selected_edges {
+            selected_edges.iter().for_each(|(edge, size, color)| {
+                let (from, to) = self.draw_ctx.calc_edge_coords(edge);
+                ui.painter().line_segment([from, to], (*size, *color));
+            });
+        }
     }
 }
 
@@ -330,6 +385,9 @@ struct UIState {
     test_data_on: bool,
     start_node: Option<Node>,
     end_node: Option<Node>,
+    selected_nodes: Option<Vec<(Node, f32, Color32)>>,
+    selected_edges: Option<Vec<(Edge, f32, Color32)>>,
+    draw_path: bool,
     frame_history: FrameHistory,
     mouse_pos: Pos2,
     toasts: Toasts,
@@ -358,6 +416,9 @@ impl Default for UIState {
             test_data_on: false,
             start_node: None,
             end_node: None,
+            selected_nodes: None,
+            selected_edges: None,
+            draw_path: false,
             frame_history: FrameHistory::default(),
             mouse_pos: Pos2::new(0.0, 0.0),
             toasts: Toasts::new()
@@ -370,7 +431,7 @@ impl Default for UIState {
 fn send_parse_request(
     tx_nodes: Sender<Vec<Node>>,
     tx_edges: Sender<Vec<Edge>>,
-    tx_neighboors: Sender<HashMap<Node, Vec<Node>>>,
+    tx_neighboors: Sender<HashMap<Node, Vec<Edge>>>,
     file: String,
     ctx: egui::Context,
 ) {

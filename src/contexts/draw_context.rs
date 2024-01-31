@@ -1,5 +1,4 @@
-use egui::{Color32, Id, Pos2, Rect, Sense, Ui, Vec2};
-use log::debug;
+use egui::{Pos2, Vec2};
 
 use crate::{
     models::{Edge, Node},
@@ -25,8 +24,8 @@ impl DrawingContext {
     }
 
     pub fn calc_edge_coords(&self, edge: &Edge) -> (Pos2, Pos2) {
-        let from_position = self.adjust_for_pan_and_zoom(&edge.from);
-        let to_position = self.adjust_for_pan_and_zoom(&edge.to);
+        let from_position = self.adjust_for_pan_and_zoom(&edge.from.position);
+        let to_position = self.adjust_for_pan_and_zoom(&edge.to.position);
 
         (from_position, to_position)
     }

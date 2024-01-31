@@ -13,7 +13,20 @@
     <node id="9" longitude="4959500" latitude="613651"/>
   </nodes>
   <arcs>
-    <arc from="0" to="8" length="57"/>
+    <!-- <arc from="0" to="8" length="57"/>
+    <arc from="0" to="9" length="13"/>
+    <arc from="1" to="3" length="49"/>
+    <arc from="1" to="6" length="22"/>
+    <arc from="2" to="1" length="22"/>
+    <arc from="2" to="4" length="40"/>
+    <arc from="3" to="1" length="22"/>
+    <arc from="3" to="7" length="103"/>
+    <arc from="4" to="7" length="153"/>
+    <arc from="4" to="6" length="14"/>
+    <arc from="5" to="2" length="77"/>
+    <arc from="5" to="6" length="19"/>
+    <arc from="6" to="5" length="19"/> -->
+    <arc from="8" to="0" length="57"/>
     <arc from="0" to="9" length="13"/>
     <arc from="1" to="3" length="49"/>
     <arc from="1" to="6" length="22"/>
