@@ -16,7 +16,7 @@ pub const _LUX_MAX_LAT: f64 = 6.531256;
 pub const _LUX_MIN_LONG: f64 = 50.182918;
 pub const _LUX_MAX_LONG: f64 = 49.441140;
 
-pub mod xml_files {
-    pub const MAP2_XML: &str = "res/map2.xml";
-    pub const TEST_XML: &str = "res/test.xml";
+pub mod xml_data {
+    pub const MAP2_XML: &[u8] = include_bytes!("../../res/map2.xml");
+    pub const TEST_XML: &[u8] = include_bytes!("../../res/test.xml");
 }

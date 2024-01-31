@@ -5,8 +5,8 @@ use crate::{
     translator::TRANSLATOR,
 };
 
-pub fn parse_xml(file_name: &str) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<Edge>>) {
-    let text = std::fs::read_to_string(file_name).unwrap();
+pub fn parse_xml(data_buffer: &'static [u8]) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<Edge>>) {
+    let text = std::str::from_utf8(data_buffer).unwrap();
 
     let doc = roxmltree::Document::parse(&text).unwrap();
     let map_elem = doc.descendants().find(|n| n.has_tag_name("map")).unwrap();

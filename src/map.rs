@@ -53,7 +53,7 @@ impl Map {
             self.data_ctx.tx_nodes.clone(),
             self.data_ctx.tx_edges.clone(),
             self.data_ctx.tx_neighboors.clone(),
-            self.data_ctx.data_file().to_string(),
+            self.data_ctx.data_buffer(),
             ctx.clone(),
         );
     }
@@ -206,7 +206,7 @@ impl Map {
                         .step_by(0.1)
                         .text("Pan y"),
                 );
-                ui.label(format!("Selected data file: {}", self.data_ctx.data_file()));
+                ui.label(format!("Selected data file: {}", self.data_ctx.data_name()));
                 let toggle_resp = toggle_ui(ui, &mut self.state.test_data_on);
                 if toggle_resp.clicked() {
                     self.data_ctx.switch_data_file();
@@ -432,12 +432,12 @@ fn send_parse_request(
     tx_nodes: Sender<Vec<Node>>,
     tx_edges: Sender<Vec<Edge>>,
     tx_neighboors: Sender<HashMap<Node, Vec<Edge>>>,
-    file: String,
+    data_buffer: &'static [u8],
     ctx: egui::Context,
 ) {
     tokio::spawn(async move {
         debug!("Parsing map...");
-        let (nodes, edges, neighboors) = parse_xml(&file);
+        let (nodes, edges, neighboors) = parse_xml(data_buffer);
         debug!("Map parsed");
 
         debug!("Sending nodes...");

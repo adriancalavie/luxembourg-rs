@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     models::{Edge, Node},
-    utils::constants::xml_files::{MAP2_XML, TEST_XML},
+    utils::constants::xml_data::{MAP2_XML, TEST_XML},
 };
 
 pub struct DataContext {
@@ -25,7 +25,7 @@ pub struct DataContext {
     pub nodes_loading: bool,
     pub edges_loading: bool,
 
-    data_file: String,
+    data_buf: &'static [u8],
 
     first_load: std::cell::Cell<bool>,
 }
@@ -52,20 +52,28 @@ impl DataContext {
             neighboors,
             nodes_loading: false,
             edges_loading: false,
-            data_file: MAP2_XML.to_string(),
+            data_buf: MAP2_XML,
             first_load: std::cell::Cell::new(true),
         }
     }
 
-    pub fn data_file(&self) -> &str {
-        &self.data_file
+    pub fn data_buffer(&self) -> &'static [u8] {
+        &self.data_buf
+    }
+
+    pub fn data_name(&self) -> &str {
+        if self.data_buf == MAP2_XML {
+            "map2.xml"
+        } else {
+            "test.xml"
+        }
     }
 
     pub fn switch_data_file(&mut self) {
-        self.data_file = if self.data_file == MAP2_XML {
-            TEST_XML.to_string()
+        self.data_buf = if self.data_buf == MAP2_XML {
+            TEST_XML
         } else {
-            MAP2_XML.to_string()
+            MAP2_XML
         };
     }
 
