@@ -1,6 +1,7 @@
-use egui::{Color32, Id, Pos2, Rect, Sense, Vec2};
+use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Vec2};
+use egui_toast::{Toast, ToastKind, ToastOptions, Toasts};
 use log::debug;
-use std::sync::mpsc::Sender;
+use std::{collections::HashMap, sync::mpsc::Sender};
 
 use crate::{
     components::toggle_ui,
@@ -29,13 +30,13 @@ impl Map {
     }
 
     fn is_selected(&self, node_id: &str) -> bool {
-        if let Some(start_node_id) = &self.state.start_node_id {
-            if start_node_id == node_id {
+        if let Some(start_node) = &self.state.start_node {
+            if start_node.id == node_id {
                 return true;
             }
         }
-        if let Some(end_node_id) = &self.state.end_node_id {
-            if end_node_id == node_id {
+        if let Some(end_node) = &self.state.end_node {
+            if end_node.id == node_id {
                 return true;
             }
         }
@@ -49,6 +50,7 @@ impl Map {
         send_parse_request(
             self.data_ctx.tx_nodes.clone(),
             self.data_ctx.tx_edges.clone(),
+            self.data_ctx.tx_neighboors.clone(),
             self.data_ctx.data_file().to_string(),
             ctx.clone(),
         );
@@ -103,38 +105,63 @@ impl Map {
             );
 
             if node_hook.clicked() {
-                nodes_to_select.push(node.id.clone());
+                nodes_to_select.push(node.clone());
             }
             ui.painter().circle_filled(position_on_screen, size, color);
         }
 
-        nodes_to_select.into_iter().for_each(|node_id| {
-            self.select_node(node_id);
+        nodes_to_select.into_iter().for_each(|node| {
+            self.select_node(node);
         });
     }
 
-    fn select_node(&mut self, node_id: String) {
-        println!("Node {} was clicked", node_id);
-        match (&self.state.start_node_id, &self.state.end_node_id) {
+    fn select_node(&mut self, node: Node) {
+        println!("Node {} was clicked", node);
+        let node_id = node.id.clone();
+        match (&self.state.start_node, &self.state.end_node) {
             (None, _) => {
                 // start node is not set
-                self.state.start_node_id = Some(node_id);
+                self.state.start_node = Some(node);
+                self.state.show_toast(
+                    format!("Node {} selected as 'start'", &node_id),
+                    ToastKind::Info,
+                );
             }
-            (Some(_), None) => {
+            (Some(start_node), None) => {
                 // end node is not set
-                self.state.end_node_id = Some(node_id);
-            }
-            (Some(start_id), Some(end_id)) => {
-                if start_id == &node_id {
+                if start_node == &node {
                     // user clicked on the start node
-                    self.state.start_node_id = None;
-                } else if end_id == &node_id {
-                    // user clicked on the end node
-                    self.state.end_node_id = None;
+                    self.state.start_node = None;
+                    self.state
+                        .show_toast(format!("Node {} unselected", &node_id), ToastKind::Info);
                 } else {
                     // user clicked on a new node
-                    self.state.start_node_id = Some(node_id);
-                    self.state.end_node_id = None;
+                    self.state.end_node = Some(node);
+                    self.state.show_toast(
+                        format!("Node {} selected as 'end'", &node_id),
+                        ToastKind::Info,
+                    );
+                }
+            }
+            (Some(start_id), Some(end_id)) => {
+                if start_id == &node {
+                    // user clicked on the start node
+                    self.state.start_node = None;
+                    self.state
+                        .show_toast(format!("Node {} unselected", &node_id), ToastKind::Info);
+                } else if end_id == &node {
+                    // user clicked on the end node
+                    self.state.end_node = None;
+                    self.state
+                        .show_toast(format!("Node {} unselected", &node_id), ToastKind::Info);
+                } else {
+                    // user clicked on a new node
+                    self.state.start_node = Some(node);
+                    self.state.end_node = None;
+                    self.state.show_toast(
+                        format!("Node {} selected as 'start'", &node_id),
+                        ToastKind::Info,
+                    );
                 }
             }
         }
@@ -231,12 +258,39 @@ impl Map {
         if let Ok(nodes) = self.data_ctx.rx_nodes.try_recv() {
             self.data_ctx.nodes = nodes;
             debug!("Nodes received");
+            self.state.show_toast(
+                format!("Nodes received: {}", self.data_ctx.nodes.len()),
+                ToastKind::Info,
+            );
             self.data_ctx.nodes_loading = false;
         }
         if let Ok(edges) = self.data_ctx.rx_edges.try_recv() {
             self.data_ctx.edges = edges;
             debug!("Edges received");
+            self.state.show_toast(
+                format!("Edges received: {}", self.data_ctx.edges.len()),
+                ToastKind::Info,
+            );
             self.data_ctx.edges_loading = false;
+        }
+        if let Ok(neighboors) = self.data_ctx.rx_neighboors.try_recv() {
+            self.data_ctx.neighboors = neighboors;
+            debug!("Neighboors received");
+            self.state.show_toast(
+                format!("Neighboors received: {}", self.data_ctx.neighboors.len()),
+                ToastKind::Info,
+            );
+        }
+        if self.state.is_start_and_end_set() {
+            debug!("Start and end nodes are set");
+            self.state.show_toast(
+                format!(
+                    "Start and end nodes are set: {} and {}",
+                    self.state.start_node.as_ref().unwrap(),
+                    self.state.end_node.as_ref().unwrap()
+                ),
+                ToastKind::Info,
+            );
         }
     }
 
@@ -254,6 +308,9 @@ impl Map {
             self.render_edges(ui);
             // Draw nodes
             self.render_nodes(ui);
+
+            // Draw toasts
+            self.state.toasts.show(ctx);
         });
     }
 }
@@ -271,20 +328,41 @@ impl eframe::App for Map {
 
 struct UIState {
     test_data_on: bool,
-    start_node_id: Option<String>,
-    end_node_id: Option<String>,
+    start_node: Option<Node>,
+    end_node: Option<Node>,
     frame_history: FrameHistory,
     mouse_pos: Pos2,
+    toasts: Toasts,
+}
+
+impl UIState {
+    fn show_toast(&mut self, message: String, toast_type: ToastKind) {
+        self.toasts.add(Toast {
+            text: message.into(),
+            kind: toast_type,
+            options: ToastOptions::default()
+                .duration_in_seconds(5.0)
+                .show_progress(true)
+                .show_icon(true),
+        });
+    }
+
+    fn is_start_and_end_set(&self) -> bool {
+        self.start_node.is_some() && self.end_node.is_some()
+    }
 }
 
 impl Default for UIState {
     fn default() -> Self {
         Self {
             test_data_on: false,
-            start_node_id: None,
-            end_node_id: None,
+            start_node: None,
+            end_node: None,
             frame_history: FrameHistory::default(),
             mouse_pos: Pos2::new(0.0, 0.0),
+            toasts: Toasts::new()
+                .anchor(Align2::RIGHT_TOP, (-10.0, 10.0))
+                .direction(egui::Direction::TopDown),
         }
     }
 }
@@ -292,12 +370,13 @@ impl Default for UIState {
 fn send_parse_request(
     tx_nodes: Sender<Vec<Node>>,
     tx_edges: Sender<Vec<Edge>>,
+    tx_neighboors: Sender<HashMap<Node, Vec<Node>>>,
     file: String,
     ctx: egui::Context,
 ) {
     tokio::spawn(async move {
         debug!("Parsing map...");
-        let (nodes, edges) = parse_xml(&file);
+        let (nodes, edges, neighboors) = parse_xml(&file);
         debug!("Map parsed");
 
         debug!("Sending nodes...");
@@ -307,6 +386,10 @@ fn send_parse_request(
         debug!("Sending edges...");
         tx_edges.send(edges).unwrap();
         debug!("Edges sent");
+
+        debug!("Sending neighboors...");
+        tx_neighboors.send(neighboors).unwrap();
+        debug!("Neighboors sent");
 
         debug!("Map loaded");
         ctx.request_repaint();

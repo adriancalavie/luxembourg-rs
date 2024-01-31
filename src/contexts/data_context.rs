@@ -1,4 +1,7 @@
-use std::sync::mpsc::{Receiver, Sender};
+use std::{
+    collections::HashMap,
+    sync::mpsc::{Receiver, Sender},
+};
 
 use crate::{
     models::{Edge, Node},
@@ -12,8 +15,12 @@ pub struct DataContext {
     pub tx_nodes: Sender<Vec<Node>>,
     pub tx_edges: Sender<Vec<Edge>>,
 
+    pub tx_neighboors: Sender<HashMap<Node, Vec<Node>>>,
+    pub rx_neighboors: Receiver<HashMap<Node, Vec<Node>>>,
+
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub neighboors: HashMap<Node, Vec<Node>>,
 
     pub nodes_loading: bool,
     pub edges_loading: bool,
@@ -25,20 +32,24 @@ pub struct DataContext {
 
 impl DataContext {
     fn empty() -> Self {
-        Self::new(vec![], vec![])
+        Self::new(vec![], vec![], HashMap::new())
     }
 
-    fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
+    fn new(nodes: Vec<Node>, edges: Vec<Edge>, neighboors: HashMap<Node, Vec<Node>>) -> Self {
         let (tx_nodes, rx_nodes) = std::sync::mpsc::channel();
         let (tx_edges, rx_edges) = std::sync::mpsc::channel();
+        let (tx_neighboors, rx_neighboors) = std::sync::mpsc::channel();
 
         Self {
             rx_nodes,
             rx_edges,
             tx_nodes,
             tx_edges,
+            tx_neighboors,
+            rx_neighboors,
             nodes,
             edges,
+            neighboors,
             nodes_loading: false,
             edges_loading: false,
             data_file: MAP2_XML.to_string(),
