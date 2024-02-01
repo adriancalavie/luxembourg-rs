@@ -11,17 +11,26 @@ use crate::{
     utils::FloatOrd,
 };
 
+type RunArgs = (Node, Node, bool, bool); // (start, end, is_marking_passed_edges, use_heuristic)
+type RunOutput = (HashSet<Edge>, HashSet<Edge>); // (selected_edges, passed_edges)
+
 pub struct AlgorithmContext {
+    pub is_marking_passed_edges: bool,
+    pub use_astar: bool,
     selected_edges: HashSet<Edge>,
-    current_computation_args: Option<(Node, Node)>,
-    computed_runs: HashMap<(Node, Node), HashSet<Edge>>,
+    passed_edges: HashSet<Edge>,
+    current_run_args: Option<RunArgs>,
+    computed_runs: HashMap<RunArgs, RunOutput>, // (start, end, is_marking_passed_edges) -> (selected_edges, passed_edges)
 }
 
 impl AlgorithmContext {
     pub fn new() -> Self {
         Self {
+            is_marking_passed_edges: false,
+            use_astar: true,
             selected_edges: HashSet::new(),
-            current_computation_args: None,
+            passed_edges: HashSet::new(),
+            current_run_args: None,
             computed_runs: HashMap::new(),
         }
     }
@@ -30,33 +39,69 @@ impl AlgorithmContext {
         self.selected_edges.contains(edge)
     }
 
+    pub fn is_edge_passed(&self, edge: &Edge) -> bool {
+        self.passed_edges.contains(edge)
+    }
+
     pub fn is_new_args(&self, start: &Node, end: &Node) -> bool {
-        match self.current_computation_args.as_ref() {
+        match self.current_run_args.as_ref() {
             None => true,
-            Some((s, e)) => s != start || e != end,
+            Some((s, e, is_marking, uses_astar)) => {
+                s != start
+                    || e != end
+                    || *is_marking != self.is_marking_passed_edges
+                    || *uses_astar != self.use_astar
+            }
         }
     }
 
-    pub fn compute_path(&mut self, from: &Node, to: &Node, neighboors: &HashMap<Node, Vec<Edge>>) {
+    pub fn compute_path(&mut self, from: &Node, to: &Node, neighbors: &HashMap<Node, Vec<Edge>>) {
         if !self.is_new_args(from, to) {
             return;
         }
-        if let std::collections::hash_map::Entry::Vacant(e) =
-            self.computed_runs.entry((from.clone(), to.clone()))
-        {
-            let selected_edges = run_astar(from, to, neighboors);
-            e.insert(selected_edges);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.computed_runs.entry((
+            from.clone(),
+            to.clone(),
+            self.is_marking_passed_edges,
+            self.use_astar,
+        )) {
+            let (selected_edges, passed_edges) = run_pathfinding_algorithm(
+                from,
+                to,
+                neighbors,
+                self.is_marking_passed_edges,
+                self.use_astar,
+            );
+            e.insert((selected_edges, passed_edges));
         }
-        self.selected_edges = self
+        (self.selected_edges, self.passed_edges) = self
             .computed_runs
-            .get(&(from.clone(), to.clone()))
+            .get(&(
+                from.clone(),
+                to.clone(),
+                self.is_marking_passed_edges,
+                self.use_astar,
+            ))
             .unwrap()
             .clone();
-        self.current_computation_args = Some((from.clone(), to.clone()));
+        self.current_run_args = Some((
+            from.clone(),
+            to.clone(),
+            self.is_marking_passed_edges,
+            self.use_astar,
+        ));
     }
 }
 
-fn run_astar(start: &Node, end: &Node, neighboors: &HashMap<Node, Vec<Edge>>) -> HashSet<Edge> {
+fn run_pathfinding_algorithm(
+    start: &Node,
+    end: &Node,
+    neighbors: &HashMap<Node, Vec<Edge>>,
+    mark_passed_edges: bool,
+    use_heuristic: bool,
+) -> RunOutput {
+    let mut passed_edges = HashSet::new();
+
     let mut frontier: PriorityQueue<NodeData, Reverse<FloatOrd<f32>>> = PriorityQueue::new();
     frontier.push(NodeData::from(start.clone()), Reverse(FloatOrd(0.0)));
 
@@ -73,7 +118,11 @@ fn run_astar(start: &Node, end: &Node, neighboors: &HashMap<Node, Vec<Edge>>) ->
             break;
         }
 
-        for next in neighboors.get(&current.node).unwrap() {
+        for next in neighbors.get(&current.node).unwrap() {
+            if mark_passed_edges {
+                passed_edges.insert(next.clone());
+            }
+
             let new_cost = *cost_so_far.get(&current).unwrap() + FloatOrd(next.length);
 
             let next_node_data = NodeData::from(next.to.clone());
@@ -81,14 +130,20 @@ fn run_astar(start: &Node, end: &Node, neighboors: &HashMap<Node, Vec<Edge>>) ->
                 || new_cost < *cost_so_far.get(&next_node_data).unwrap()
             {
                 cost_so_far.insert(next_node_data.clone(), new_cost);
-                let priority = new_cost + heuristic(&next.to, end);
+
+                let priority = if use_heuristic {
+                    heuristic(&next.to, end)
+                } else {
+                    new_cost
+                };
+
                 frontier.push(next_node_data.clone(), Reverse(priority));
                 came_from.insert(next_node_data.clone(), Some(current.clone()));
             }
         }
     }
 
-    reconstruct_path(&came_from, start, end)
+    (reconstruct_path(&came_from, start, end), passed_edges)
 }
 
 fn reconstruct_path(
@@ -113,13 +168,20 @@ fn reconstruct_path(
     selected_edges
 }
 
+const HEURISTIC_MULTIPLIER: FloatOrd<f32> = FloatOrd(1.0);
 fn heuristic(a: &Node, b: &Node) -> FloatOrd<f32> {
-    distance(a.position, b.position)
+    HEURISTIC_MULTIPLIER * distance(&a.position, &b.position)
 }
 
-fn distance(a: Pos2, b: Pos2) -> FloatOrd<f32> {
+fn distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
     FloatOrd(((a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)).sqrt())
 }
+
+// fn manhattan_distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
+//     let dx = (a.x - b.x).abs();
+//     let dy = (a.y - b.y).abs();
+//     FloatOrd(dx + dy)
+// }
 
 #[derive(Debug, Clone)]
 struct NodeData {
@@ -134,18 +196,6 @@ impl NodeData {
 
     fn from(node: Node) -> Self {
         Self::new(node, FloatOrd(0.0))
-    }
-
-    fn from_with_cost(node: Node, cost: FloatOrd<f32>) -> Self {
-        Self::new(node, cost)
-    }
-
-    fn from_with_parent(node: Node) -> Self {
-        Self::new(node, FloatOrd(0.0))
-    }
-
-    fn from_with_cost_and_parent(node: Node, cost: FloatOrd<f32>) -> Self {
-        Self::new(node, cost)
     }
 }
 

@@ -8,7 +8,7 @@ use crate::{
 pub fn parse_xml(data_buffer: &'static [u8]) -> (Vec<Node>, Vec<Edge>, HashMap<Node, Vec<Edge>>) {
     let text = std::str::from_utf8(data_buffer).unwrap();
 
-    let doc = roxmltree::Document::parse(&text).unwrap();
+    let doc = roxmltree::Document::parse(text).unwrap();
     let map_elem = doc.descendants().find(|n| n.has_tag_name("map")).unwrap();
 
     let nodes_elem = map_elem
@@ -49,13 +49,13 @@ pub fn parse_xml(data_buffer: &'static [u8]) -> (Vec<Node>, Vec<Edge>, HashMap<N
         })
         .collect::<Vec<Edge>>();
 
-    let mut neighboors: HashMap<Node, Vec<Edge>> = HashMap::new();
+    let mut neighbors: HashMap<Node, Vec<Edge>> = HashMap::new();
     edges.iter().for_each(|edge| {
-        neighboors
+        neighbors
             .entry(edge.from.clone())
-            .and_modify(|neighboors| neighboors.push(edge.clone()))
+            .and_modify(|neighbors| neighbors.push(edge.clone()))
             .or_insert(vec![edge.clone()]);
     });
 
-    (nodes, edges, neighboors)
+    (nodes, edges, neighbors)
 }

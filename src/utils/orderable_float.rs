@@ -34,9 +34,10 @@ macro_rules! float_ord_impl {
             }
         }
         impl Eq for FloatOrd<$f> {}
+
         impl PartialOrd for FloatOrd<$f> {
             fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                self.convert().partial_cmp(&other.convert())
+                Some(self.cmp(other))
             }
         }
         impl Ord for FloatOrd<$f> {

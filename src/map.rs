@@ -4,7 +4,7 @@ use log::debug;
 use std::{collections::HashMap, sync::mpsc::Sender};
 
 use crate::{
-    components::toggle_ui,
+    components::{toggle, toggle_ui},
     contexts::{AlgorithmContext, DataContext, DrawingContext},
     models::{Edge, Node},
     parser::parse_xml,
@@ -52,7 +52,7 @@ impl Map {
         send_parse_request(
             self.data_ctx.tx_nodes.clone(),
             self.data_ctx.tx_edges.clone(),
-            self.data_ctx.tx_neighboors.clone(),
+            self.data_ctx.tx_neighbors.clone(),
             self.data_ctx.data_buffer(),
             ctx.clone(),
         );
@@ -70,22 +70,31 @@ impl Map {
         };
 
         let mut selected_to_draw = Vec::new();
+        let mut passed_to_draw = Vec::new();
         let mut edges_to_draw = Vec::new();
 
         self.data_ctx.edges.iter().for_each(|edge| {
-            if self.state.draw_path && self.algorithm_ctx.is_edge_selected(edge) {
-                selected_to_draw.push((edge.clone(), 2.0, Color32::RED));
-                return;
+            if self.state.draw_path {
+                if self.algorithm_ctx.is_edge_selected(edge) {
+                    selected_to_draw.push((edge.clone(), 2.0, Color32::RED));
+                    return;
+                } else if self.algorithm_ctx.is_marking_passed_edges
+                    && self.algorithm_ctx.is_edge_passed(edge)
+                {
+                    passed_to_draw.push((edge.clone(), 1.0, Color32::GREEN));
+                    return;
+                }
             }
             edges_to_draw.push((edge, 0.5, edge_color));
         });
 
         assert_eq!(
-            edges_to_draw.len() + selected_to_draw.len(),
+            edges_to_draw.len() + selected_to_draw.len() + passed_to_draw.len(),
             self.data_ctx.edges.len(),
-            "edges_to_draw count does not match data_ctx.edges count"
+            "edges_to_draw + passed_to_draw count does not match data_ctx.edges count"
         );
         self.state.selected_edges = Some(selected_to_draw);
+        self.state.passed_edges = Some(passed_to_draw);
 
         edges_to_draw.into_iter().for_each(|(edge, size, color)| {
             let (from, to) = self.draw_ctx.calc_edge_coords(edge);
@@ -115,7 +124,7 @@ impl Map {
 
         nodes_to_draw.into_iter().for_each(|(node, size, color)| {
             let position_on_screen = self.draw_ctx.calc_node_coords(node);
-            // Create an interactable area for the circle with a unique ID
+            // Create an intractable area for the circle with a unique ID
             let node_hook = ui.interact(
                 Rect::from_center_size(position_on_screen, Vec2::splat(size * 2.0)),
                 Id::new(node.id.clone()),
@@ -212,6 +221,14 @@ impl Map {
                     self.data_ctx.switch_data_file();
                     self.send_load_data_req(ctx);
                 }
+                ui.label("Show passed edges");
+                ui.add(toggle(&mut self.algorithm_ctx.is_marking_passed_edges));
+                ui.label(if self.algorithm_ctx.use_astar {
+                    "Using A*"
+                } else {
+                    "Using Dijkstra"
+                });
+                ui.add(toggle(&mut self.algorithm_ctx.use_astar));
                 if ui
                     .button("Reset zoom and pan")
                     .on_hover_text("Reset zoom and pan")
@@ -293,11 +310,11 @@ impl Map {
             );
             self.data_ctx.edges_loading = false;
         }
-        if let Ok(neighboors) = self.data_ctx.rx_neighboors.try_recv() {
-            self.data_ctx.neighboors = neighboors;
-            debug!("Neighboors received");
+        if let Ok(neighbors) = self.data_ctx.rx_neighbors.try_recv() {
+            self.data_ctx.neighbors = neighbors;
+            debug!("Neighbors received");
             self.state.show_toast(
-                format!("Neighboors received: {}", self.data_ctx.neighboors.len()),
+                format!("Neighbors received: {}", self.data_ctx.neighbors.len()),
                 ToastKind::Info,
             );
         }
@@ -324,7 +341,7 @@ impl Map {
             self.algorithm_ctx.compute_path(
                 self.state.start_node.as_ref().unwrap(),
                 self.state.end_node.as_ref().unwrap(),
-                &self.data_ctx.neighboors,
+                &self.data_ctx.neighbors,
             );
             self.state.draw_path = true;
         }
@@ -354,17 +371,25 @@ impl Map {
     }
 
     fn render_selected(&self, ui: &mut egui::Ui) {
+        if let Some(passed_edges) = &self.state.passed_edges {
+            passed_edges.iter().for_each(|(edge, size, color)| {
+                let (from, to) = self.draw_ctx.calc_edge_coords(edge);
+                ui.painter().line_segment([from, to], (*size, *color));
+            });
+        }
+
+        if let Some(selected_edges) = &self.state.selected_edges {
+            selected_edges.iter().for_each(|(edge, size, color)| {
+                let (from, to) = self.draw_ctx.calc_edge_coords(edge);
+                ui.painter().line_segment([from, to], (*size, *color));
+            });
+        }
+
         if let Some(selected_nodes) = &self.state.selected_nodes {
             selected_nodes.iter().for_each(|(node, size, color)| {
                 let position_on_screen = self.draw_ctx.calc_node_coords(node);
                 ui.painter()
                     .circle_filled(position_on_screen, *size, *color);
-            });
-        }
-        if let Some(selected_edges) = &self.state.selected_edges {
-            selected_edges.iter().for_each(|(edge, size, color)| {
-                let (from, to) = self.draw_ctx.calc_edge_coords(edge);
-                ui.painter().line_segment([from, to], (*size, *color));
             });
         }
     }
@@ -387,6 +412,7 @@ struct UIState {
     end_node: Option<Node>,
     selected_nodes: Option<Vec<(Node, f32, Color32)>>,
     selected_edges: Option<Vec<(Edge, f32, Color32)>>,
+    passed_edges: Option<Vec<(Edge, f32, Color32)>>,
     draw_path: bool,
     frame_history: FrameHistory,
     mouse_pos: Pos2,
@@ -418,6 +444,7 @@ impl Default for UIState {
             end_node: None,
             selected_nodes: None,
             selected_edges: None,
+            passed_edges: None,
             draw_path: false,
             frame_history: FrameHistory::default(),
             mouse_pos: Pos2::new(0.0, 0.0),
@@ -431,13 +458,13 @@ impl Default for UIState {
 fn send_parse_request(
     tx_nodes: Sender<Vec<Node>>,
     tx_edges: Sender<Vec<Edge>>,
-    tx_neighboors: Sender<HashMap<Node, Vec<Edge>>>,
+    tx_neighbors: Sender<HashMap<Node, Vec<Edge>>>,
     data_buffer: &'static [u8],
     ctx: egui::Context,
 ) {
     tokio::spawn(async move {
         debug!("Parsing map...");
-        let (nodes, edges, neighboors) = parse_xml(data_buffer);
+        let (nodes, edges, neighbors) = parse_xml(data_buffer);
         debug!("Map parsed");
 
         debug!("Sending nodes...");
@@ -448,9 +475,9 @@ fn send_parse_request(
         tx_edges.send(edges).unwrap();
         debug!("Edges sent");
 
-        debug!("Sending neighboors...");
-        tx_neighboors.send(neighboors).unwrap();
-        debug!("Neighboors sent");
+        debug!("Sending neighbors...");
+        tx_neighbors.send(neighbors).unwrap();
+        debug!("Neighbors sent");
 
         debug!("Map loaded");
         ctx.request_repaint();
