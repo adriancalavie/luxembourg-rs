@@ -1,16 +1,17 @@
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Vec2};
 use egui_toast::{Toast, ToastKind, ToastOptions, Toasts};
+use enum_iterator::all;
 use log::debug;
 use std::{collections::HashMap, sync::mpsc::Sender};
 
 use crate::{
     components::{toggle, toggle_ui},
-    contexts::{AlgorithmContext, DataContext, DrawingContext},
+    contexts::{AlgorithmContext, AlgorithmType, DataContext, DrawingContext},
     models::{Edge, Node},
     parser::parse_xml,
     utils::{
         constants::{DEFAULT_PAN, DEFAULT_ZOOM, MAX_PAN, MAX_ZOOM, MIN_PAN},
-        FrameHistory,
+        FloatOrd, FrameHistory,
     },
 };
 
@@ -74,7 +75,7 @@ impl Map {
         let mut edges_to_draw = Vec::new();
 
         self.data_ctx.edges.iter().for_each(|edge| {
-            if self.state.draw_path {
+            if self.state.is_drawing_path {
                 if self.algorithm_ctx.is_edge_selected(edge) {
                     selected_to_draw.push((edge.clone(), 2.0, Color32::RED));
                     return;
@@ -143,8 +144,7 @@ impl Map {
     }
 
     fn select_node(&mut self, node: Node) {
-        println!("Node {} was clicked", node);
-        self.state.draw_path = false;
+        self.state.is_drawing_path = false;
 
         let node_id = node.id.clone();
         match (&self.state.start_node, &self.state.end_node) {
@@ -223,12 +223,34 @@ impl Map {
                 }
                 ui.label("Show passed edges");
                 ui.add(toggle(&mut self.algorithm_ctx.is_marking_passed_edges));
-                ui.label(if self.algorithm_ctx.use_astar {
-                    "Using A*"
-                } else {
-                    "Using Dijkstra"
-                });
-                ui.add(toggle(&mut self.algorithm_ctx.use_astar));
+                egui::ComboBox::from_label("Select algorithm variation")
+                    .selected_text(self.algorithm_ctx.algorithm_type.to_string())
+                    .show_ui(ui, |ui| {
+                        for algorithm in all::<AlgorithmType>() {
+                            if ui
+                                .selectable_label(
+                                    self.algorithm_ctx.algorithm_type.to_string()
+                                        == algorithm.to_string(),
+                                    algorithm.to_string(),
+                                )
+                                .on_hover_text("Select algorithm variation")
+                                .clicked()
+                            {
+                                self.algorithm_ctx.algorithm_type = algorithm;
+                            }
+                        }
+                    });
+                if self.algorithm_ctx.algorithm_type == AlgorithmType::HybridAStar {
+                    ui.label("A* weight");
+                    ui.add(
+                        egui::Slider::new(&mut self.algorithm_ctx.astar_weight.0, 0.0..=2.0)
+                            .step_by(0.1)
+                            .text("Weight"),
+                    );
+                    if ui.button("Reset A* weight").clicked() {
+                        self.algorithm_ctx.astar_weight = FloatOrd(1.0);
+                    }
+                }
                 if ui
                     .button("Reset zoom and pan")
                     .on_hover_text("Reset zoom and pan")
@@ -250,10 +272,19 @@ impl Map {
             });
         });
 
-        ui.label(format!(
-            "mouse pos: x: {}, y: {}",
-            self.state.mouse_pos.x, self.state.mouse_pos.y
-        ));
+        if self.state.is_drawing_path {
+            ui.label(format!(
+                "Distance: {:.3} km",
+                // The total cost seems to be in meters, so we divide by 1000 to get kilometers
+                self.algorithm_ctx.total_cost / 1000.
+            ));
+            if self.state.passed_edges.is_some() {
+                ui.label(format!(
+                    "Extra edges passed: {}",
+                    self.state.passed_edges.as_ref().unwrap().len()
+                ));
+            }
+        }
 
         ui.ctx().input(|i| {
             if i.pointer.is_decidedly_dragging() {
@@ -343,7 +374,7 @@ impl Map {
                 self.state.end_node.as_ref().unwrap(),
                 &self.data_ctx.neighbors,
             );
-            self.state.draw_path = true;
+            self.state.is_drawing_path = true;
         }
     }
 
@@ -413,7 +444,7 @@ struct UIState {
     selected_nodes: Option<Vec<(Node, f32, Color32)>>,
     selected_edges: Option<Vec<(Edge, f32, Color32)>>,
     passed_edges: Option<Vec<(Edge, f32, Color32)>>,
-    draw_path: bool,
+    is_drawing_path: bool,
     frame_history: FrameHistory,
     mouse_pos: Pos2,
     toasts: Toasts,
@@ -445,7 +476,7 @@ impl Default for UIState {
             selected_nodes: None,
             selected_edges: None,
             passed_edges: None,
-            draw_path: false,
+            is_drawing_path: false,
             frame_history: FrameHistory::default(),
             mouse_pos: Pos2::new(0.0, 0.0),
             toasts: Toasts::new()
