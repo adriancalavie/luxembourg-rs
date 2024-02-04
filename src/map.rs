@@ -251,6 +251,17 @@ impl Map {
                         self.algorithm_ctx.astar_weight = FloatOrd(1.0);
                     }
                 }
+                if self.algorithm_ctx.is_using_astar() {
+                    ui.label(format!(
+                        "Uses {} distance",
+                        if self.algorithm_ctx.use_manhattan {
+                            "Manhattan"
+                        } else {
+                            "Euclidean"
+                        }
+                    ));
+                    ui.add(toggle(&mut self.algorithm_ctx.use_manhattan));
+                }
                 if ui
                     .button("Reset zoom and pan")
                     .on_hover_text("Reset zoom and pan")

@@ -16,8 +16,8 @@ use crate::{
 // this is an arbitrary value found by trial and error
 const MULTIPLICITY_BASE: FloatOrd<f32> = FloatOrd(13_000.);
 
-// (start, end, is_marking_passed_edges, algorithm_type, astar_weight)
-type RunArgs = (Node, Node, bool, AlgorithmType, FloatOrd<f32>);
+// (start, end, is_marking_passed_edges, algorithm_type, astar_weight, use_manhattan)
+type RunArgs = (Node, Node, bool, AlgorithmType, FloatOrd<f32>, bool);
 // note: the assumption is that the neighbors will not change during the lifetime of the context
 //      if the edges would change between runs, the neighbors hashmap should also be included in the RunArgs
 
@@ -46,6 +46,7 @@ pub struct AlgorithmContext {
     pub algorithm_type: AlgorithmType,
     pub astar_weight: FloatOrd<f32>,
     pub total_cost: f32,
+    pub use_manhattan: bool,
     selected_edges: HashSet<Edge>,
     passed_edges: HashSet<Edge>,
     current_run_args: Option<RunArgs>,
@@ -59,6 +60,7 @@ impl AlgorithmContext {
             algorithm_type: AlgorithmType::HybridAStar,
             astar_weight: FloatOrd(1.0),
             total_cost: 0.0,
+            use_manhattan: true,
             selected_edges: HashSet::new(),
             passed_edges: HashSet::new(),
             current_run_args: None,
@@ -77,12 +79,13 @@ impl AlgorithmContext {
     pub fn is_new_args(&self, start: &Node, end: &Node) -> bool {
         match self.current_run_args.as_ref() {
             None => true,
-            Some((s, e, is_marking, algorithm_type, astar_weight)) => {
+            Some((s, e, is_marking, algorithm_type, astar_weight, use_manhattan)) => {
                 s != start
                     || e != end
                     || *is_marking != self.is_marking_passed_edges
                     || *algorithm_type != self.algorithm_type
                     || *astar_weight != self.astar_weight
+                    || *use_manhattan != self.use_manhattan
             }
         }
     }
@@ -97,6 +100,7 @@ impl AlgorithmContext {
             self.is_marking_passed_edges,
             self.algorithm_type,
             self.astar_weight,
+            self.use_manhattan,
         )) {
             let run_output = run_pathfinding_algorithm(
                 from,
@@ -105,6 +109,7 @@ impl AlgorithmContext {
                 self.is_marking_passed_edges,
                 self.algorithm_type,
                 self.astar_weight,
+                self.use_manhattan,
             );
             e.insert(run_output);
         }
@@ -117,6 +122,7 @@ impl AlgorithmContext {
                 self.is_marking_passed_edges,
                 self.algorithm_type,
                 self.astar_weight,
+                self.use_manhattan,
             ))
             .unwrap()
             .clone();
@@ -127,7 +133,13 @@ impl AlgorithmContext {
             self.is_marking_passed_edges,
             self.algorithm_type,
             self.astar_weight,
+            self.use_manhattan,
         ));
+    }
+
+    pub fn is_using_astar(&self) -> bool {
+        self.algorithm_type == AlgorithmType::AStar
+            || self.algorithm_type == AlgorithmType::HybridAStar
     }
 }
 
@@ -138,6 +150,7 @@ fn run_pathfinding_algorithm(
     mark_passed_edges: bool,
     algorithm_type: AlgorithmType,
     heuristic_weight: FloatOrd<f32>,
+    use_manhattan: bool,
 ) -> RunOutput {
     let mut passed_edges = HashSet::new();
     let mut total_cost: f32 = 0.0;
@@ -173,9 +186,9 @@ fn run_pathfinding_algorithm(
                 cost_so_far.insert(next_node_data.clone(), new_cost);
 
                 let priority = match algorithm_type {
-                    AlgorithmType::AStar => heuristic(&next.to, end, None),
+                    AlgorithmType::AStar => heuristic(&next.to, end, None, use_manhattan),
                     AlgorithmType::HybridAStar => {
-                        new_cost + heuristic(&next.to, end, Some(heuristic_weight))
+                        new_cost + heuristic(&next.to, end, Some(heuristic_weight), use_manhattan)
                     }
                     AlgorithmType::Dijkstra => new_cost,
                 };
@@ -212,22 +225,35 @@ fn reconstruct_path(
     selected_edges
 }
 
-fn heuristic(a: &Node, b: &Node, multiplier: Option<FloatOrd<f32>>) -> FloatOrd<f32> {
+fn heuristic(
+    a: &Node,
+    b: &Node,
+    multiplier: Option<FloatOrd<f32>>,
+    use_manhattan: bool,
+) -> FloatOrd<f32> {
     // Apply a base multiplicity to make it more aggressive by default
     // Also, the user can set 'simple' values like 1.5, 2.0, etc instead of 19_500.0, 26_000.0, etc
     let mult = multiplier.unwrap_or(FloatOrd(1.0)) * MULTIPLICITY_BASE;
-    mult * distance(&a.position, &b.position)
+    mult * distance(&a.position, &b.position, use_manhattan)
 }
 
-fn distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
+fn distance(a: &Pos2, b: &Pos2, use_manhattan: bool) -> FloatOrd<f32> {
+    if use_manhattan {
+        manhattan_distance(a, b)
+    } else {
+        euclidean_distance(a, b)
+    }
+}
+
+fn euclidean_distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
     FloatOrd(((a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)).sqrt())
 }
 
-// fn manhattan_distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
-//     let dx = (a.x - b.x).abs();
-//     let dy = (a.y - b.y).abs();
-//     FloatOrd(dx + dy)
-// }
+fn manhattan_distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
+    let dx = (a.x - b.x).abs();
+    let dy = (a.y - b.y).abs();
+    FloatOrd(dx + dy)
+}
 
 #[derive(Debug, Clone)]
 struct NodeData {
