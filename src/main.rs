@@ -34,8 +34,10 @@ fn main() -> Result<(), eframe::Error> {
         // renderer: eframe::Renderer::Wgpu,
         // wgpu_options: egui_wgpu::WgpuConfiguration {
         //     power_preference: eframe::wgpu::PowerPreference::HighPerformance,
-        //     present_mode: eframe::wgpu::PresentMode::AutoNoVsync,
+        //     present_mode: eframe::wgpu::PresentMode::AutoVsync,
         //     supported_backends: eframe::wgpu::Backends::VULKAN,
+        //     desired_maximum_frame_latency: Some(1),
+
         //     ..Default::default()
         // },
         ..Default::default()

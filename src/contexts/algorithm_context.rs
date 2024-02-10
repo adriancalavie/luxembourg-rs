@@ -10,11 +10,11 @@ use std::{
 
 use crate::{
     models::{Edge, Node},
-    utils::FloatOrd,
+    utils::{euclidean_distance, manhattan_distance, FloatOrd},
 };
 
 // this is an arbitrary value found by trial and error
-const MULTIPLICITY_BASE: FloatOrd<f32> = FloatOrd(13_000.);
+const MULTIPLICITY_BASE: f32 = 13_000.;
 
 // (start, end, is_marking_passed_edges, algorithm_type, astar_weight, use_manhattan)
 type RunArgs = (Node, Node, bool, AlgorithmType, FloatOrd<f32>, bool);
@@ -186,9 +186,15 @@ fn run_pathfinding_algorithm(
                 cost_so_far.insert(next_node_data.clone(), new_cost);
 
                 let priority = match algorithm_type {
-                    AlgorithmType::AStar => heuristic(&next.to, end, None, use_manhattan),
+                    AlgorithmType::AStar => FloatOrd(heuristic(&next.to, end, None, use_manhattan)),
                     AlgorithmType::HybridAStar => {
-                        new_cost + heuristic(&next.to, end, Some(heuristic_weight), use_manhattan)
+                        new_cost
+                            + FloatOrd(heuristic(
+                                &next.to,
+                                end,
+                                Some(heuristic_weight),
+                                use_manhattan,
+                            ))
                     }
                     AlgorithmType::Dijkstra => new_cost,
                 };
@@ -225,34 +231,19 @@ fn reconstruct_path(
     selected_edges
 }
 
-fn heuristic(
-    a: &Node,
-    b: &Node,
-    multiplier: Option<FloatOrd<f32>>,
-    use_manhattan: bool,
-) -> FloatOrd<f32> {
+fn heuristic(a: &Node, b: &Node, multiplier: Option<FloatOrd<f32>>, use_manhattan: bool) -> f32 {
     // Apply a base multiplicity to make it more aggressive by default
     // Also, the user can set 'simple' values like 1.5, 2.0, etc instead of 19_500.0, 26_000.0, etc
-    let mult = multiplier.unwrap_or(FloatOrd(1.0)) * MULTIPLICITY_BASE;
+    let mult = multiplier.unwrap_or(FloatOrd(1.0)).0 * MULTIPLICITY_BASE;
     mult * distance(&a.position, &b.position, use_manhattan)
 }
 
-fn distance(a: &Pos2, b: &Pos2, use_manhattan: bool) -> FloatOrd<f32> {
+fn distance(a: &Pos2, b: &Pos2, use_manhattan: bool) -> f32 {
     if use_manhattan {
         manhattan_distance(a, b)
     } else {
         euclidean_distance(a, b)
     }
-}
-
-fn euclidean_distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
-    FloatOrd(((a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)).sqrt())
-}
-
-fn manhattan_distance(a: &Pos2, b: &Pos2) -> FloatOrd<f32> {
-    let dx = (a.x - b.x).abs();
-    let dy = (a.y - b.y).abs();
-    FloatOrd(dx + dy)
 }
 
 #[derive(Debug, Clone)]

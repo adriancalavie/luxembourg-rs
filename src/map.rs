@@ -1,4 +1,4 @@
-use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Vec2};
+use egui::{Align2, Color32, Pos2};
 use egui_toast::{Toast, ToastKind, ToastOptions, Toasts};
 use enum_iterator::all;
 use log::debug;
@@ -11,7 +11,7 @@ use crate::{
     parser::parse_xml,
     utils::{
         constants::{DEFAULT_PAN, DEFAULT_ZOOM, MAX_PAN, MAX_ZOOM, MIN_PAN},
-        FloatOrd, FrameHistory,
+        euclidean_distance, FloatOrd, FrameHistory,
     },
 };
 
@@ -44,6 +44,23 @@ impl Map {
             }
         }
         false
+    }
+
+    fn find_closest_node(&self, pos: Pos2) -> Option<Node> {
+        let mut closest_node = None;
+        let mut closest_distance = f32::MAX;
+
+        for node in &self.data_ctx.nodes {
+            let node_pos = self.draw_ctx.calc_node_coords(node);
+            let distance = euclidean_distance(&pos, &node_pos);
+
+            if distance < 25. && distance < closest_distance {
+                closest_distance = distance;
+                closest_node = Some(node.clone());
+            }
+        }
+
+        closest_node
     }
 
     fn send_load_data_req(&mut self, ctx: &egui::Context) {
@@ -106,7 +123,6 @@ impl Map {
     fn render_nodes(&mut self, ui: &mut egui::Ui) {
         let mut selected_to_draw = Vec::new();
         let mut nodes_to_draw = Vec::new();
-        let mut nodes_to_select = Vec::new();
 
         self.data_ctx.nodes.iter().for_each(|node| {
             if self.is_selected(&node.id) {
@@ -126,26 +142,12 @@ impl Map {
         nodes_to_draw.into_iter().for_each(|(node, size, color)| {
             let position_on_screen = self.draw_ctx.calc_node_coords(node);
             // Create an intractable area for the circle with a unique ID
-            let node_hook = ui.interact(
-                Rect::from_center_size(position_on_screen, Vec2::splat(size * 2.0)),
-                Id::new(node.id.clone()),
-                Sense::click(),
-            );
 
-            if node_hook.clicked() {
-                nodes_to_select.push(node.clone());
-            }
             ui.painter().circle_filled(position_on_screen, size, color);
-        });
-
-        nodes_to_select.into_iter().for_each(|node| {
-            self.select_node(node);
         });
     }
 
     fn select_node(&mut self, node: Node) {
-        self.state.is_drawing_path = false;
-
         let node_id = node.id.clone();
         match (&self.state.start_node, &self.state.end_node) {
             (None, _) => {
@@ -156,42 +158,23 @@ impl Map {
                     ToastKind::Info,
                 );
             }
-            (Some(start_node), None) => {
+            (Some(_), None) => {
                 // end node is not set
-                if start_node == &node {
-                    // user clicked on the start node
-                    self.state.start_node = None;
-                    self.state
-                        .show_toast(format!("Node {} unselected", &node_id), ToastKind::Info);
-                } else {
-                    // user clicked on a new node
-                    self.state.end_node = Some(node);
-                    self.state.show_toast(
-                        format!("Node {} selected as 'end'", &node_id),
-                        ToastKind::Info,
-                    );
-                }
+                self.state.end_node = Some(node);
+                self.state.show_toast(
+                    format!("Node {} selected as 'end'", &node_id),
+                    ToastKind::Info,
+                );
             }
-            (Some(start_id), Some(end_id)) => {
-                if start_id == &node {
-                    // user clicked on the start node
-                    self.state.start_node = None;
-                    self.state
-                        .show_toast(format!("Node {} unselected", &node_id), ToastKind::Info);
-                } else if end_id == &node {
-                    // user clicked on the end node
-                    self.state.end_node = None;
-                    self.state
-                        .show_toast(format!("Node {} unselected", &node_id), ToastKind::Info);
-                } else {
-                    // user clicked on a new node
-                    self.state.start_node = Some(node);
-                    self.state.end_node = None;
-                    self.state.show_toast(
-                        format!("Node {} selected as 'start'", &node_id),
-                        ToastKind::Info,
-                    );
-                }
+            (Some(_), Some(_)) => {
+                // both start and end nodes are set
+                self.state.start_node = Some(node);
+                self.state.end_node = None;
+                self.state.is_drawing_path = false;
+                self.state.show_toast(
+                    format!("Node {} selected as 'start'", &node_id),
+                    ToastKind::Info,
+                );
             }
         }
     }
@@ -298,18 +281,23 @@ impl Map {
         }
 
         ui.ctx().input(|i| {
+            self.state.mouse_pos = i.pointer.interact_pos().unwrap_or_default();
+
             if i.pointer.is_decidedly_dragging() {
                 let delta = i.pointer.delta();
 
                 self.draw_ctx.pan.x += delta.x / self.draw_ctx.zoom;
                 self.draw_ctx.pan.y += delta.y / self.draw_ctx.zoom;
+            } else if i.pointer.any_click() {
+                let closest_node = self.find_closest_node(self.state.mouse_pos);
+                if let Some(node) = closest_node {
+                    self.select_node(node);
+                }
             }
 
-            self.state.mouse_pos = i.pointer.interact_pos().unwrap_or_default();
-
-            if i.scroll_delta.y != 0.0 {
+            if i.raw_scroll_delta.y != 0.0 {
                 let zoom_before = self.draw_ctx.zoom;
-                self.draw_ctx.zoom += i.scroll_delta.y / 10.0;
+                self.draw_ctx.zoom += i.raw_scroll_delta.y / 10.0;
 
                 if self.draw_ctx.zoom < 1.0 {
                     self.draw_ctx.zoom = 1.0;
@@ -397,8 +385,6 @@ impl Map {
 
     fn render_ui(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui: &mut egui::Ui| {
-            // Draw controls
-            self.render_controls(ui, ctx);
             // Draw edges
             self.render_edges(ui);
             // Draw nodes
@@ -406,6 +392,9 @@ impl Map {
 
             // Draw selected nodes & edges
             self.render_selected(ui);
+
+            // Draw controls
+            self.render_controls(ui, ctx);
 
             // Draw toasts
             self.state.toasts.show(ctx);

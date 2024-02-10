@@ -1,11 +1,14 @@
 pub mod constants;
 
+mod distance;
 mod extensions;
 mod frame_history;
 mod hashable_float;
 mod orderable_float;
 mod window_utils;
 
+#[allow(unused_imports)]
+pub use distance::{euclidean_distance, manhattan_distance};
 #[allow(unused_imports)]
 pub use frame_history::FrameHistory;
 #[allow(unused_imports)]
